@@ -6,7 +6,7 @@ import re
 
 from future.utils import viewitems
 
-from miasm.core.utils import int_to_byte
+from miasm.core import utils
 from miasm.expression.expression import *
 from pyparsing import *
 from miasm.core.cpu import *
@@ -14,6 +14,8 @@ from collections import defaultdict
 import miasm.arch.x86.regs as regs_module
 from miasm.arch.x86.regs import *
 from miasm.core.asm_ast import AstNode, AstInt, AstId, AstMem, AstOp
+from miasm.ir.ir import color_expr_html
+from miasm.core.utils import BRACKET_O, BRACKET_C
 
 
 log = logging.getLogger("x86_arch")
@@ -208,9 +210,9 @@ def cb_deref_base_expr(tokens):
     return addr
 
 
-deref_mem_ad = (LBRACK + base_expr + RBRACK).setParseAction(cb_deref_base_expr)
+deref_mem_ad = (LBRACK + base_expr + RBRACK).set_parse_action(cb_deref_base_expr)
 
-deref_ptr = (base_expr + COLON + base_expr).setParseAction(cb_deref_segmoff)
+deref_ptr = (base_expr + COLON + base_expr).set_parse_action(cb_deref_segmoff)
 
 
 PTR = Suppress('PTR')
@@ -241,7 +243,7 @@ def cb_deref_mem(tokens):
     raise ValueError('len(tokens) > 3')
 
 mem_size = (BYTE | DWORD | QWORD | WORD | TBYTE | XMMWORD)
-deref_mem = (mem_size + PTR + Optional((base_expr + COLON))+ deref_mem_ad).setParseAction(cb_deref_mem)
+deref_mem = (mem_size + PTR + Optional((base_expr + COLON))+ deref_mem_ad).set_parse_action(cb_deref_mem)
 
 
 rmarg = (
@@ -427,7 +429,7 @@ def offsize(p):
 
 
 def get_prefix(s):
-    g = re.search('(\S+)(\s+)', s)
+    g = re.search(r'(\S+)(\s+)', s)
     if not g:
         return None, s
     prefix, b = g.groups()
@@ -464,7 +466,6 @@ class additional_info(object):
 
 class instruction_x86(instruction):
     __slots__ = []
-    delayslot = 0
 
     def __init__(self, *args, **kargs):
         super(instruction_x86, self).__init__(*args, **kargs)
@@ -570,6 +571,26 @@ class instruction_x86(instruction):
                 o = "REPE %s" % o
         return o
 
+    def to_html(self, loc_db=None):
+        o = super(instruction_x86, self).to_html(loc_db)
+        if self.additional_info.g1.value & 1:
+            text =  utils.set_html_text_color("LOCK", utils.COLOR_MNEMO)
+            o = "%s %s" % (text, o)
+        if self.additional_info.g1.value & 2:
+            if getattr(self.additional_info.prefixed, 'default', b"") != b"\xF2":
+                text =  utils.set_html_text_color("REPNE", utils.COLOR_MNEMO)
+                o = "%s %s" % (text, o)
+        if self.additional_info.g1.value & 8:
+            if getattr(self.additional_info.prefixed, 'default', b"") != b"\xF3":
+                text =  utils.set_html_text_color("REP", utils.COLOR_MNEMO)
+                o = "%s %s" % (text, o)
+        elif self.additional_info.g1.value & 4:
+            if getattr(self.additional_info.prefixed, 'default', b"") != b"\xF3":
+                text =  utils.set_html_text_color("REPE", utils.COLOR_MNEMO)
+                o = "%s %s" % (text, o)
+        return o
+
+
     def get_args_expr(self):
         args = []
         for a in self.args:
@@ -604,9 +625,43 @@ class instruction_x86(instruction):
                 s = str(expr).replace('(', '').replace(')', '')
             else:
                 s = str(expr)
-            o = prefix + sz + ' PTR %s[%s]' % (segm, s)
+            o = prefix + sz + ' PTR ' + str(segm) + '[%s]' % s
         elif isinstance(expr, ExprOp) and expr.op == 'segm':
             o = "%s:%s" % (expr.args[0], expr.args[1])
+        else:
+            raise ValueError('check this %r' % expr)
+        return "%s" % o
+
+
+    @staticmethod
+    def arg2html(expr, index=None, loc_db=None):
+        if expr.is_id() or expr.is_int() or expr.is_loc():
+            o = color_expr_html(expr, loc_db)
+        elif ((isinstance(expr, ExprOp) and expr.op == 'far' and
+               isinstance(expr.args[0], ExprMem)) or
+              isinstance(expr, ExprMem)):
+            if isinstance(expr, ExprOp):
+                prefix, expr = "FAR ", expr.args[0]
+            else:
+                prefix = ""
+            sz = SIZE2MEMPREFIX[expr.size]
+            sz =  '<font color="%s">%s</font>' % (utils.COLOR_MEM, sz)
+            segm = ""
+            if is_mem_segm(expr):
+                segm = "%s:" % expr.ptr.args[0]
+                expr = expr.ptr.args[1]
+            else:
+                expr = expr.ptr
+            if isinstance(expr, ExprOp):
+                s = color_expr_html(expr, loc_db)#.replace('(', '').replace(')', '')
+            else:
+                s = color_expr_html(expr, loc_db)
+            o = prefix + sz + ' PTR ' + str(segm) + BRACKET_O + str(s) + BRACKET_C
+        elif isinstance(expr, ExprOp) and expr.op == 'segm':
+            o = "%s:%s" % (
+                color_expr_html(expr.args[0], loc_db),
+                color_expr_html(expr.args[1], loc_db)
+            )
         else:
             raise ValueError('check this %r' % expr)
         return "%s" % o
@@ -864,7 +919,7 @@ class mn_x86(cls_mn):
         if self.rex_b.value:
             rex |= 0x1
         if rex != 0x40 or self.rex_p.value == 1:
-            v = int_to_byte(rex) + v
+            v = utils.int_to_byte(rex) + v
             if hasattr(self, 'no_rex'):
                 return None
 
@@ -2404,6 +2459,10 @@ class x86_rm_xmm(x86_rm_mm):
     is_mm = False
     is_xmm = True
 
+class x86_rm_xmm_m16(x86_rm_mm):
+    msize = 16
+    is_mm = False
+    is_xmm = True
 
 class x86_rm_xmm_m32(x86_rm_mm):
     msize = 32
@@ -2479,7 +2538,7 @@ class x86_rm_reg_noarg(object):
                 self.parent.w8.value = 0
             return start, stop
         try:
-            result, start, stop = next(self.parser.scanString(text))
+            result, start, stop = next(self.parser.scan_string(text))
         except StopIteration:
             return None, None
         expr = self.asm_ast_to_expr(result[0], loc_db)
@@ -2766,7 +2825,7 @@ class bs_cond_imm(bs_cond_scale, x86_arg):
             expr, start, stop = parser_result[self.parser]
         else:
             try:
-                expr, start, stop = next(self.parser.scanString(text))
+                expr, start, stop = next(self.parser.scan_string(text))
             except StopIteration:
                 expr = None
         self.expr = expr
@@ -2893,7 +2952,7 @@ class bs_rel_off(bs_cond_imm):
             expr, start, stop = parser_result[self.parser]
         else:
             try:
-                expr, start, stop = next(self.parser.scanString(text))
+                expr, start, stop = next(self.parser.scan_string(text))
             except StopIteration:
                 expr = None
         self.expr = expr
@@ -3040,7 +3099,7 @@ class bs_movoff(x86_arg):
                 return None, None
             return start, stop
         try:
-            v, start, stop = next(self.parser.scanString(text))
+            v, start, stop = next(self.parser.scan_string(text))
         except StopIteration:
             return None, None
         if not isinstance(e, ExprMem):
@@ -3105,7 +3164,7 @@ class bs_msegoff(x86_arg):
                 return None, None
             return start, stop
         try:
-            v, start, stop = next(self.parser.scanString(text))
+            v, start, stop = next(self.parser.scan_string(text))
         except StopIteration:
             return None, None
         self.expr = v[0]
@@ -3298,6 +3357,7 @@ rm_arg_mm_m64 = bs(l=0, cls=(x86_rm_mm_m64,), fname='rmarg')
 rm_arg_mm_reg = bs(l=0, cls=(x86_rm_mm_reg,), fname='rmarg')
 
 rm_arg_xmm = bs(l=0, cls=(x86_rm_xmm,), fname='rmarg')
+rm_arg_xmm_m16 = bs(l=0, cls=(x86_rm_xmm_m16,), fname='rmarg')
 rm_arg_xmm_m32 = bs(l=0, cls=(x86_rm_xmm_m32,), fname='rmarg')
 rm_arg_xmm_m64 = bs(l=0, cls=(x86_rm_xmm_m64,), fname='rmarg')
 rm_arg_xmm_m128 = bs(l=0, cls=(x86_rm_xmm_m128,), fname='rmarg')
@@ -4230,7 +4290,8 @@ addop("pshuflw", [bs8(0x0f), bs8(0x70), pref_f2] +
       rmmod(xmm_reg, rm_arg_xmm_m128) + [u08])
 addop("pshufhw", [bs8(0x0f), bs8(0x70), pref_f3] +
       rmmod(xmm_reg, rm_arg_xmm_m128) + [u08])
-
+addop("ptest", [bs8(0x0f), bs8(0x38), bs8(0x17), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128))
 
 ### Convert
 ### SS = single precision
@@ -4285,10 +4346,34 @@ addop("cvttsd2si",[bs8(0x0f), bs8(0x2c), pref_f2]
 addop("cvttss2si",[bs8(0x0f), bs8(0x2c), pref_f3]
       + rmmod(reg, rm_arg_xmm_m32))
 
+addop("blendps", [bs8(0x0f), bs8(0x3a), bs8(0x0c), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128) + [u08],
+      [xmm_reg, rm_arg_xmm_m128, u08])
+
+addop("pblendw", [bs8(0x0f), bs8(0x3a), bs8(0x0e), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128) + [u08])
+
 addop("palignr", [bs8(0x0f), bs8(0x73), bs8(0x0f), no_xmm_pref] +
       rmmod(mm_reg, rm_arg_mm_m64) + [u08], [mm_reg, rm_arg_mm_m64, u08])
 addop("palignr", [bs8(0x0f), bs8(0x3a), bs8(0x0f), pref_66] +
       rmmod(xmm_reg, rm_arg_xmm_m128) + [u08], [xmm_reg, rm_arg_xmm_m128, u08])
+
+addop("pclmulqdq", [bs8(0x0f), bs8(0x3a), bs8(0x44), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128) + [u08],
+      [xmm_reg, rm_arg_xmm_m128, u08])
+
+addop("psignb", [bs8(0x0f), bs8(0x38), bs8(0x08), no_xmm_pref] +
+      rmmod(mm_reg, rm_arg_mm_m64))
+addop("psignb", [bs8(0x0f), bs8(0x38), bs8(0x08), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128))
+addop("psignw", [bs8(0x0f), bs8(0x38), bs8(0x09), no_xmm_pref] +
+      rmmod(mm_reg, rm_arg_mm_m64))
+addop("psignw", [bs8(0x0f), bs8(0x38), bs8(0x09), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128))
+addop("psignd", [bs8(0x0f), bs8(0x38), bs8(0x0a), no_xmm_pref] +
+      rmmod(mm_reg, rm_arg_mm_m64))
+addop("psignd", [bs8(0x0f), bs8(0x38), bs8(0x0a), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128))
 
 addop("psrlq", [bs8(0x0f), bs8(0x73), no_xmm_pref] +
       rmmod(d2, rm_arg_mm) + [u08], [rm_arg_mm, u08])
@@ -4392,6 +4477,12 @@ addop("pmaxuw", [bs8(0x0f), bs8(0x38), bs8(0x3e), pref_66] +
 addop("pmaxud", [bs8(0x0f), bs8(0x38), bs8(0x3f), pref_66] +
       rmmod(xmm_reg, rm_arg_xmm))
 
+addop("pmaxsb", [bs8(0x0f), bs8(0x38), bs8(0x3c), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm))
+
+addop("pmaxsd", [bs8(0x0f), bs8(0x38), bs8(0x3d), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm))
+
 addop("pmaxsw", [bs8(0x0f), bs8(0xee), no_xmm_pref] +
       rmmod(mm_reg, rm_arg_mm_m64))
 addop("pmaxsw", [bs8(0x0f), bs8(0xee), pref_66] +
@@ -4405,9 +4496,17 @@ addop("pminub", [bs8(0x0f), bs8(0xda), pref_66] +
 addop("pminuw", [bs8(0x0f), bs8(0x38), bs8(0x3a), pref_66] +
       rmmod(xmm_reg, rm_arg_xmm))
 
+addop("phminposuw", [bs8(0x0f), bs8(0x38), bs8(0x41), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128))
+
 addop("pminud", [bs8(0x0f), bs8(0x38), bs8(0x3b), pref_66] +
       rmmod(xmm_reg, rm_arg_xmm))
 
+addop("pminsb", [bs8(0x0f), bs8(0x38), bs8(0x38), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm))
+
+addop("pminsd", [bs8(0x0f), bs8(0x38), bs8(0x39), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm))
 
 addop("pcmpeqb", [bs8(0x0f), bs8(0x74), no_xmm_pref] +
       rmmod(mm_reg, rm_arg_mm))
@@ -4511,9 +4610,8 @@ addop("pextrb", [bs8(0x0f), bs8(0x3a), bs8(0x14), pref_66] +
       rmmod(xmm_reg, rm_arg_reg_m08) + [u08], [rm_arg_reg_m08, xmm_reg, u08])
 addop("pextrd", [bs8(0x0f), bs8(0x3a), bs8(0x16), pref_66, bs_opmode32] +
       rmmod(xmm_reg, rm_arg) + [u08], [rm_arg, xmm_reg, u08])
-addop("pextrq", [bs8(0x0f), bs8(0x3a), bs8(0x16), pref_66] +
-      rmmod(xmm_reg, rm_arg_m64) + [bs_opmode64] + [u08], [rm_arg_m64, xmm_reg, u08])
-
+addop("pextrq", [bs8(0x0F), bs8(0x3A), bs8(0x16), pref_66, bs_opmode64] +
+      rmmod(xmm_reg, rm_arg) + [u08], [rm_arg, xmm_reg, u08])
 
 addop("pextrw", [bs8(0x0f), bs8(0x3a), bs8(0x15), pref_66] +
       rmmod(xmm_reg, rm_arg_reg_m16) + [u08], [rm_arg_reg_m16, xmm_reg, u08])
@@ -4536,6 +4634,24 @@ addop("pmovmskb", [bs8(0x0f), bs8(0xd7), no_xmm_pref] +
       rmmod(reg_modrm, rm_arg_mm_reg))
 addop("pmovmskb", [bs8(0x0f), bs8(0xd7), pref_66] +
       rmmod(reg_modrm, rm_arg_xmm_reg))
+
+addop("pmovsxwd", [bs8(0x0f), bs8(0x38), bs8(0x23), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m64))
+
+addop("pmovsxwq", [bs8(0x0f), bs8(0x38), bs8(0x24), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m32))
+
+addop("pmovsxbw", [bs8(0x0f), bs8(0x38), bs8(0x20), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m64))
+
+addop("pmovsxbd", [bs8(0x0f), bs8(0x38), bs8(0x21), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m32))
+
+addop("pmovsxbq", [bs8(0x0f), bs8(0x38), bs8(0x22), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m16))
+
+addop("pmovsxdq", [bs8(0x0f), bs8(0x38), bs8(0x25), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m64))
 
 addop("shufps", [bs8(0x0f), bs8(0xc6), no_xmm_pref] +
       rmmod(xmm_reg, rm_arg_xmm) + [u08])
@@ -4562,6 +4678,11 @@ addop("packuswb", [bs8(0x0f), bs8(0x67), no_xmm_pref] +
 addop("packuswb", [bs8(0x0f), bs8(0x67), pref_66] +
       rmmod(xmm_reg, rm_arg_xmm_m128))
 
+addop("packusdw", [bs8(0x0f), bs8(0x38), bs8(0x2b), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128))
+
+addop("pmulld", [bs8(0x0f), bs8(0x38), bs8(0x40), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm))
 addop("pmullw", [bs8(0x0f), bs8(0xd5), no_xmm_pref] +
       rmmod(mm_reg, rm_arg_mm_m64))
 addop("pmullw", [bs8(0x0f), bs8(0xd5), pref_66] +
@@ -4573,6 +4694,8 @@ addop("pmulhuw", [bs8(0x0f), bs8(0xe4), pref_66] +
 addop("pmulhw", [bs8(0x0f), bs8(0xe5), no_xmm_pref] +
       rmmod(mm_reg, rm_arg_mm_m64))
 addop("pmulhw", [bs8(0x0f), bs8(0xe5), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128))
+addop("pmuldq", [bs8(0x0f), bs8(0x38), bs8(0x28), pref_66] +
       rmmod(xmm_reg, rm_arg_xmm_m128))
 addop("pmuludq", [bs8(0x0f), bs8(0xf4), no_xmm_pref] +
       rmmod(mm_reg, rm_arg_mm_m64))
@@ -4633,6 +4756,9 @@ addop("pavgw", [bs8(0x0f), bs8(0xe3), no_xmm_pref] +
       rmmod(mm_reg, rm_arg_mm_m64))
 addop("pavgw", [bs8(0x0f), bs8(0xe3), pref_66] +
       rmmod(xmm_reg, rm_arg_xmm_m128))
+
+addop("mpsadbw", [bs8(0x0f), bs8(0x3a), bs8(0x42), pref_66] +
+      rmmod(xmm_reg, rm_arg_xmm_m128) + [u08])
 
 addop("maskmovq", [bs8(0x0f), bs8(0xf7), no_xmm_pref] +
       rmmod(mm_reg, rm_arg_mm_reg))

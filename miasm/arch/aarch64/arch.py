@@ -14,6 +14,9 @@ from miasm.arch.aarch64.regs import *
 from miasm.core.cpu import log as log_cpu
 from miasm.core.modint import mod_size2int
 from miasm.core.asm_ast import AstInt, AstId, AstMem, AstOp
+from miasm.ir.ir import color_expr_html
+from miasm.core import utils
+from miasm.core.utils import BRACKET_O, BRACKET_C
 
 log = logging.getLogger("aarch64dis")
 console_handler = logging.StreamHandler()
@@ -126,26 +129,26 @@ def cb_deref_pc_nooff(tokens):
         return result
     raise ValueError('bad string')
 
-all_binaryop_lsl_t = literal_list(shift_str).setParseAction(cb_shift)
+all_binaryop_lsl_t = literal_list(shift_str).set_parse_action(cb_shift)
 
-all_binaryop_shiftleft_t = literal_list(["LSL"]).setParseAction(cb_shift)
+all_binaryop_shiftleft_t = literal_list(["LSL"]).set_parse_action(cb_shift)
 
 extend_lst = ['UXTB', 'UXTH', 'UXTW', 'UXTX', 'SXTB', 'SXTH', 'SXTW', 'SXTX']
 extend2_lst = ['UXTW', 'LSL', 'SXTW', 'SXTX']
 
-all_extend_t = literal_list(extend_lst).setParseAction(cb_extreg)
-all_extend2_t = literal_list(extend2_lst).setParseAction(cb_extreg)
+all_extend_t = literal_list(extend_lst).set_parse_action(cb_extreg)
+all_extend2_t = literal_list(extend2_lst).set_parse_action(cb_extreg)
 
 
-gpregz32_extend = (gpregsz32_info.parser + Optional(all_extend_t + base_expr)).setParseAction(cb_extend)
-gpregz64_extend = (gpregsz64_info.parser + Optional(all_extend_t + base_expr)).setParseAction(cb_extend)
+gpregz32_extend = (gpregsz32_info.parser + Optional(all_extend_t + base_expr)).set_parse_action(cb_extend)
+gpregz64_extend = (gpregsz64_info.parser + Optional(all_extend_t + base_expr)).set_parse_action(cb_extend)
 
 
-shift32_off = (gpregsz32_info.parser + Optional(all_binaryop_lsl_t + base_expr)).setParseAction(cb_shiftreg)
-shift64_off = (gpregsz64_info.parser + Optional(all_binaryop_lsl_t + base_expr)).setParseAction(cb_shiftreg)
+shift32_off = (gpregsz32_info.parser + Optional(all_binaryop_lsl_t + base_expr)).set_parse_action(cb_shiftreg)
+shift64_off = (gpregsz64_info.parser + Optional(all_binaryop_lsl_t + base_expr)).set_parse_action(cb_shiftreg)
 
 
-shiftimm_imm_sc = (base_expr + all_binaryop_shiftleft_t + base_expr).setParseAction(cb_shift_sc)
+shiftimm_imm_sc = (base_expr + all_binaryop_shiftleft_t + base_expr).set_parse_action(cb_shift_sc)
 
 shiftimm_off_sc = shiftimm_imm_sc | base_expr
 
@@ -219,16 +222,16 @@ RBRACK = Suppress("]")
 COMMA = Suppress(",")
 POSTINC = Suppress("!")
 
-deref_nooff = (LBRACK + gpregs64_info.parser + RBRACK).setParseAction(cb_deref_nooff)
-deref_off_post = (LBRACK + gpregs64_info.parser + RBRACK + COMMA + base_expr).setParseAction(cb_deref_post)
-deref_off_pre = (LBRACK + gpregs64_info.parser + COMMA + base_expr + RBRACK).setParseAction(cb_deref_pre)
-deref_off_pre_wb = (LBRACK + gpregs64_info.parser + COMMA + base_expr + RBRACK + POSTINC).setParseAction(cb_deref_pre_wb)
+deref_nooff = (LBRACK + gpregs64_info.parser + RBRACK).set_parse_action(cb_deref_nooff)
+deref_off_post = (LBRACK + gpregs64_info.parser + RBRACK + COMMA + base_expr).set_parse_action(cb_deref_post)
+deref_off_pre = (LBRACK + gpregs64_info.parser + COMMA + base_expr + RBRACK).set_parse_action(cb_deref_pre)
+deref_off_pre_wb = (LBRACK + gpregs64_info.parser + COMMA + base_expr + RBRACK + POSTINC).set_parse_action(cb_deref_pre_wb)
 
 deref = (deref_off_post | deref_off_pre_wb | deref_off_pre | deref_nooff)
 
 
-deref_pc_off = (LBRACK + Literal("PC") + COMMA + base_expr + RBRACK).setParseAction(cb_deref_pc_off)
-deref_pc_nooff = (LBRACK + Literal("PC") + RBRACK).setParseAction(cb_deref_pc_nooff)
+deref_pc_off = (LBRACK + Literal("PC") + COMMA + base_expr + RBRACK).set_parse_action(cb_deref_pc_off)
+deref_pc_nooff = (LBRACK + Literal("PC") + RBRACK).set_parse_action(cb_deref_pc_nooff)
 
 deref_pc = (deref_pc_off | deref_pc_nooff)
 
@@ -242,7 +245,7 @@ def cb_deref_ext2op(t):
 
     raise ValueError("cad deref")
 
-deref_ext2 = (LBRACK + gpregs_32_64 + COMMA + gpregs_32_64 + Optional(all_extend2_t + base_expr) + RBRACK).setParseAction(cb_deref_ext2op)
+deref_ext2 = (LBRACK + gpregs_32_64 + COMMA + gpregs_32_64 + Optional(all_extend2_t + base_expr) + RBRACK).set_parse_action(cb_deref_ext2op)
 
 
 class additional_info(object):
@@ -314,7 +317,6 @@ class aarch64_arg(m_arg):
 
 class instruction_aarch64(instruction):
     __slots__ = []
-    delayslot = 0
 
     def __init__(self, *args, **kargs):
         super(instruction_aarch64, self).__init__(*args, **kargs)
@@ -363,6 +365,64 @@ class instruction_aarch64(instruction):
             else:
                 arg = "%s %s %s" % (arg.args[0], arg.op, arg.args[1])
             return '[%s, %s]' % (expr.args[0], arg)
+
+        else:
+            raise NotImplementedError("bad op")
+
+    @staticmethod
+    def arg2html(expr, index=None, loc_db=None):
+        wb = False
+        if expr.is_id() or expr.is_int() or expr.is_loc():
+            return color_expr_html(expr, loc_db)
+        elif isinstance(expr, m2_expr.ExprOp) and expr.op in shift_expr:
+            op_str = shift_str[shift_expr.index(expr.op)]
+            return "%s %s %s" % (
+                color_expr_html(expr.args[0], loc_db),
+                utils.set_html_text_color(op_str, utils.COLOR_OP),
+                color_expr_html(expr.args[1], loc_db)
+            )
+        elif isinstance(expr, m2_expr.ExprOp) and expr.op == "slice_at":
+            return "%s LSL %s" % (
+                color_expr_html(expr.args[0], loc_db),
+                color_expr_html(expr.args[1], loc_db)
+            )
+        elif isinstance(expr, m2_expr.ExprOp) and expr.op in extend_lst:
+            op_str = expr.op
+            return "%s %s %s" % (
+                color_expr_html(expr.args[0], loc_db),
+                op_str,
+                color_expr_html(expr.args[1], loc_db)
+            )
+        elif isinstance(expr, m2_expr.ExprOp) and expr.op == "postinc":
+            if int(expr.args[1]) != 0:
+                return BRACKET_O + color_expr_html(expr.args[0], loc_db) + BRACKET_C + ", " + color_expr_html(expr.args[1], loc_db)
+            else:
+                return BRACKET_O + color_expr_html(expr.args[0], loc_db) + BRACKET_C
+        elif isinstance(expr, m2_expr.ExprOp) and expr.op == "preinc_wb":
+            if int(expr.args[1]) != 0:
+                return BRACKET_O + color_expr_html(expr.args[0], loc_db) + ", " + color_expr_html(expr.args[1], loc_db) + BRACKET_C + '!'
+            else:
+                return BRACKET_O + color_expr_html(expr.args[0], loc_db) + BRACKET_C
+        elif isinstance(expr, m2_expr.ExprOp) and expr.op == "preinc":
+            if len(expr.args) == 1:
+                return BRACKET_O + color_expr_html(expr.args[0], loc_db) + BRACKET_C
+            elif not isinstance(expr.args[1], m2_expr.ExprInt) or int(expr.args[1]) != 0:
+                return BRACKET_O + color_expr_html(expr.args[0], loc_db) + ", " + color_expr_html(expr.args[1], loc_db) + BRACKET_C
+            else:
+                return BRACKET_O + color_expr_html(expr.args[0], loc_db) + BRACKET_C
+        elif isinstance(expr, m2_expr.ExprOp) and expr.op == 'segm':
+            arg = expr.args[1]
+            if isinstance(arg, m2_expr.ExprId):
+                arg = str(arg)
+            elif arg.op == 'LSL' and int(arg.args[1]) == 0:
+                arg = str(arg.args[0])
+            else:
+                arg = "%s %s %s" % (
+                    color_expr_html(arg.args[0], loc_db),
+                    utils.set_html_text_color(arg.op, utils.COLOR_OP),
+                    color_expr_html(arg.args[1], loc_db)
+                )
+            return BRACKET_O + color_expr_html(expr.args[0], loc_db) + ', ' +  arg + BRACKET_C
 
         else:
             raise NotImplementedError("bad op")
@@ -1356,7 +1416,7 @@ class aarch64_immhi_page(aarch64_imm_32):
     def encode(self):
         v = int(self.expr)
         if v & (1 << 63):
-            v &= (1 << 33) - 1
+            v &= (1 << 21) - 1
         self.parent.immlo.value = v & 3
         v >>= 2
         if v > (1 << 19) - 1:
@@ -1841,6 +1901,10 @@ adsu_name = {'ADD': 0, 'SUB': 1}
 bs_adsu_name = bs_name(l=1, name=adsu_name)
 
 
+adsus_name = {'ADDS': 0, 'SUBS': 1}
+bs_adsus_name = bs_name(l=1, name=adsus_name)
+
+
 offs19 = bs(l=19, cls=(aarch64_offs,), fname='off')
 offs19pc = bs(l=19, cls=(aarch64_offs_pc,), fname='off')
 
@@ -1871,8 +1935,9 @@ aarch64op("CMN", [sf, bs('0'), bs('1'), bs('01011'), shift, bs('0'), rm_sft, imm
 
 aarch64op("cmp", [sf, bs('1'), bs('1'), bs('01011'), shift, bs('0'), rm_sft, imm6, rn, bs('11111')], [rn, rm_sft], alias=True)
 # add/sub (reg ext)
-aarch64op("addsub", [sf, bs_adsu_name, modf, bs('01011'), bs('00'), bs('1'), rm_ext, option, imm3, rn, rd], [rd, rn, rm_ext])
-#aarch64op("cmp",    [sf, bs('1'), bs('1'), bs('01011'), bs('00'), bs('1'), rm_ext, option, imm3, rn, bs('11111')], [rn, rm_ext], alias=True)
+aarch64op("addsub", [sf, bs_adsu_name, bs('0'), bs('01011'), bs('00'), bs('1'), rm_ext, option, imm3, rn, rd], [rd, rn, rm_ext])
+aarch64op("addssubs", [sf, bs_adsus_name, bs('1'), bs('01011'), bs('00'), bs('1'), rm_ext, option, imm3, rn, rd_nosp], [rd_nosp, rn, rm_ext])
+aarch64op("cmp",    [sf, bs('1'), bs('1'), bs('01011'), bs('00'), bs('1'), rm_ext, option, imm3, rn, bs('11111')], [rn, rm_ext], alias=True)
 
 
 aarch64op("neg", [sf, bs('1'), modf, bs('01011'), shift, bs('0'), rm_sft, imm6, bs('11111'), rd], [rd, rm_sft], alias=True)
@@ -2071,12 +2136,12 @@ datap0_name = {'RBIT': 0b000000, 'REV16': 0b000001,
               'REV': 0b000010,
               'CLZ': 0b000100, 'CLS': 0b000101}
 bs_datap0_name = bs_name(l=6, name=datap0_name)
-aarch64op("ldstp", [bs('0', fname='sf'), bs('1'), modf, bs('11010110'), bs('00000'), bs_datap0_name, rn, rd])
+aarch64op("ldstp", [bs('0', fname='sf'), bs('1'), modf, bs('11010110'), bs('00000'), bs_datap0_name, rn, rd], [rd, rn])
 datap1_name = {'RBIT': 0b000000, 'REV16': 0b000001,
                'REV32': 0b000010, 'REV': 0b000011,
               'CLZ': 0b000100, 'CLS': 0b000101}
 bs_datap1_name = bs_name(l=6, name=datap1_name)
-aarch64op("ldstp", [bs('1', fname='sf'), bs('1'), modf, bs('11010110'), bs('00000'), bs_datap1_name, rn, rd])
+aarch64op("ldstp", [bs('1', fname='sf'), bs('1'), modf, bs('11010110'), bs('00000'), bs_datap1_name, rn, rd], [rd, rn])
 
 
 # conditional branch p.132
@@ -2216,12 +2281,15 @@ aarch64op("ldarh",[bs('0'), bs('1'), bs('001000'), bs('0'), bs('1'), bs('0'), bs
 aarch64op("ldaxp",[bs('1'), sf, bs('001000'), bs('0'), bs('1'), bs('1'), bs('11111'), bs('1'), bs('11111'), rn64_deref_nooff, rt], [rt, rn64_deref_nooff])
 aarch64op("ldaxr",[bs('1'), sf, bs('001000'), bs('0'), bs('1'), bs('0'), bs('11111'), bs('1'), bs('11111'), rn64_deref_nooff, rt], [rt, rn64_deref_nooff])
 
+aarch64op("stlr", [bs('1'), sf, bs('001000'), bs('1'), bs('0'), bs('0'), bs('11111'), bs('1'), bs('11111'), rn64_deref_nooff, rt], [rt, rn64_deref_nooff])
+aarch64op("stlrb",[bs('0'), bs('0'), bs('001000'), bs('1'), bs('0'), bs('0'), bs('11111'), bs('1'), bs('11111'), rn64_deref_nooff, rt32], [rt32, rn64_deref_nooff])
+aarch64op("stlrh",[bs('0'), bs('1'), bs('001000'), bs('1'), bs('0'), bs('0'), bs('11111'), bs('1'), bs('11111'), rn64_deref_nooff, rt32], [rt32, rn64_deref_nooff])
+
 aarch64op("stlxr", [bs('1'), sf, bs('001000'), bs('0'), bs('0'), bs('0'), rs32, bs('1'), bs('11111'), rn64_deref_nooff, rt], [rs32, rt, rn64_deref_nooff])
 aarch64op("stlxrb",[bs('0'), bs('0'), bs('001000'), bs('0'), bs('0'), bs('0'), rs32, bs('1'), bs('11111'), rn64_deref_nooff, rt32], [rs32, rt32, rn64_deref_nooff])
 aarch64op("stlxrh",[bs('0'), bs('1'), bs('001000'), bs('0'), bs('0'), bs('0'), rs32, bs('1'), bs('11111'), rn64_deref_nooff, rt32], [rs32, rt32, rn64_deref_nooff])
 aarch64op("stlxp", [bs('1'), sf, bs('001000'), bs('0'), bs('0'), bs('1'), rs32, bs('1'), rt2, rn64_deref_nooff, rt], [rs32, rt, rt2, rn64_deref_nooff])
 
-aarch64op("stlrb",[bs('0'), bs('0'), bs('001000'), bs('1'), bs('0'), bs('0'), bs('11111'), bs('1'), bs('11111'), rn64_deref_nooff, rt32], [rt32, rn64_deref_nooff])
 
 # barriers p.135
 aarch64op("dsb", [bs('1101010100'), bs('0000110011'), crm, bs('1'), bs('00'), bs('11111')], [crm])

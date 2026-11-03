@@ -22,6 +22,21 @@ reg_tests_aarch64 = [
     ("004024DC    MVN        X1, X0",
      "E10320AA"),
 
+    ("XXXXXXXX    CLZ        W3, W7",
+     "E310C05A"),
+    ("XXXXXXXX    CLS        X0, X1",
+     "2014C0DA"),
+    ("XXXXXXXX    RBIT       X0, X1",
+     "2000C0DA"),
+    ("XXXXXXXX    REV16      X0, X1",
+     "2004C0DA"),
+    ("XXXXXXXX    REV        W0, W1",
+     "2008C05A"),
+    ("XXXXXXXX    REV        X0, X1",
+     "200CC0DA"),
+    ("XXXXXXXX    REV32      X0, X1",
+     "2008C0DA"),
+
     ("00011374    SUB        SP, SP, 0x20",
      "FF8300D1"),
     ("0009F254    SUB        W19, W19, 0x40",
@@ -66,6 +81,9 @@ reg_tests_aarch64 = [
      "004040F1"),
     ("0000D5AC    NEG        W6, W6",
      "E603064B"),
+
+    ("XXXXXXXX    CMP        W11, W12 UXTB 0x0",
+     "7F012C6B"),
 
 
     ("004028B8    CMP        X0, XZR",
@@ -1829,8 +1847,13 @@ reg_tests_aarch64 = [
     ("XXXXXXXX    STLXRB     W17, W16, [X14]",
      "D0FD1108"),
 
+    ("XXXXXXXX    STLR       W9, [X8]",
+     "09FD9F88"),
     ("XXXXXXXX    STLRB      W1, [X0]",
      "01FC9F08"),
+    ("XXXXXXXX    STLRH      W9, [X8]",
+     "09FD9F48"),
+
     ("XXXXXXXX    IC         0x0, c1, 0x0, XZR",
      "1F7108D5"),
     ("XXXXXXXX    CLREX      0xF",
@@ -1838,7 +1861,10 @@ reg_tests_aarch64 = [
     ("XXXXXXXX    TLBI       0x0, c7, 0x0, XZR",
      "1F8708D5"),
     ("XXXXXXXX    YIELD      ",
-     "3F2003D5")
+     "3F2003D5"),
+
+    ("XXXXXXXX    ADR        X29, 0xFFFFFFFFFFFFFAC8",
+     "5DD6FF10"),
 ]
 
 
@@ -1865,4 +1891,5 @@ for s, l in reg_tests_aarch64[:]:
     print([x for x in a])
     print(repr(b))
     assert(b in a)
+    print(l.to_html())
 

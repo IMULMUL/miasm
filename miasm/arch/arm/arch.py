@@ -12,6 +12,9 @@ from miasm.core.bin_stream import bin_stream
 import miasm.arch.arm.regs as regs_module
 from miasm.arch.arm.regs import *
 from miasm.core.asm_ast import AstInt, AstId, AstMem, AstOp
+from miasm.ir.ir import color_expr_html
+from miasm.core import utils
+from miasm.core.utils import BRACKET_O, BRACKET_C
 
 # A1 encoding
 
@@ -139,10 +142,10 @@ def check_values(values, value):
     else:
         raise ValueError('shift operator immediate value out of bound')
 
-int_1_31 = str_int.copy().setParseAction(lambda v: check_bounds(1, 31, v[0]))
-int_1_32 = str_int.copy().setParseAction(lambda v: check_bounds(1, 32, v[0]))
+int_1_31 = str_int.copy().set_parse_action(lambda v: check_bounds(1, 31, v[0]))
+int_1_32 = str_int.copy().set_parse_action(lambda v: check_bounds(1, 32, v[0]))
 
-int_8_16_24 = str_int.copy().setParseAction(lambda v: check_values([8, 16, 24], v[0]))
+int_8_16_24 = str_int.copy().set_parse_action(lambda v: check_values([8, 16, 24], v[0]))
 
 
 def cb_reglistparse(tokens):
@@ -165,27 +168,27 @@ def op_shift2expr(tokens):
     return shift2expr_dct[tokens[0]]
 
 reg_duo = Group(gpregs.parser + MINUS +
-                gpregs.parser).setParseAction(cb_tok_reg_duo)
+                gpregs.parser).set_parse_action(cb_tok_reg_duo)
 reg_or_duo = reg_duo | gpregs.parser
 gpreg_list = Group(LACC + delimitedList(
     reg_or_duo, delim=',') + RACC + Optional(CIRCUNFLEX))
-gpreg_list.setParseAction(cb_reglistparse)
+gpreg_list.set_parse_action(cb_reglistparse)
 
 LBRACK = Suppress("[")
 RBRACK = Suppress("]")
 COMMA = Suppress(",")
 all_binaryop_1_31_shifts_t = literal_list(
-    ['LSL', 'ROR']).setParseAction(op_shift2expr)
+    ['LSL', 'ROR']).set_parse_action(op_shift2expr)
 all_binaryop_1_32_shifts_t = literal_list(
-    ['LSR', 'ASR']).setParseAction(op_shift2expr)
-all_unaryop_shifts_t = literal_list(['RRX']).setParseAction(op_shift2expr)
+    ['LSR', 'ASR']).set_parse_action(op_shift2expr)
+all_unaryop_shifts_t = literal_list(['RRX']).set_parse_action(op_shift2expr)
 
-ror_shifts_t = literal_list(['ROR']).setParseAction(op_shift2expr)
-shl_shifts_t = literal_list(['SHL']).setParseAction(op_shift2expr)
+ror_shifts_t = literal_list(['ROR']).set_parse_action(op_shift2expr)
+shl_shifts_t = literal_list(['SHL']).set_parse_action(op_shift2expr)
 
 
 allshifts_t_armt = literal_list(
-    ['LSL', 'LSR', 'ASR', 'ROR', 'RRX']).setParseAction(op_shift2expr)
+    ['LSL', 'LSR', 'ASR', 'ROR', 'RRX']).set_parse_action(op_shift2expr)
 
 gpreg_p = gpregs.parser
 
@@ -207,13 +210,13 @@ shift_off = (gpregs.parser + Optional(
     (all_unaryop_shifts_t) |
     (all_binaryop_1_31_shifts_t + (gpregs.parser | int_1_31)) |
     (all_binaryop_1_32_shifts_t + (gpregs.parser | int_1_32))
-)).setParseAction(cb_shift)
+)).set_parse_action(cb_shift)
 shift_off |= base_expr
 
 
 rot2_expr = (gpregs.parser + Optional(
     (ror_shifts_t + (int_8_16_24))
-)).setParseAction(cb_shift)
+)).set_parse_action(cb_shift)
 
 
 rot5_expr = shift_off
@@ -235,14 +238,14 @@ def cb_deref_reg_reg_lsl_1(tokens):
     return ret
 
 
-deref_reg_reg = (LBRACK + gpregs.parser + COMMA + gpregs.parser + RBRACK).setParseAction(cb_deref_reg_reg)
-deref_reg_reg_lsl_1 = (LBRACK + gpregs.parser + COMMA + gpregs.parser + OP_LSL + base_expr + RBRACK).setParseAction(cb_deref_reg_reg_lsl_1)
+deref_reg_reg = (LBRACK + gpregs.parser + COMMA + gpregs.parser + RBRACK).set_parse_action(cb_deref_reg_reg)
+deref_reg_reg_lsl_1 = (LBRACK + gpregs.parser + COMMA + gpregs.parser + OP_LSL + base_expr + RBRACK).set_parse_action(cb_deref_reg_reg_lsl_1)
 
 
 
 (gpregs.parser + Optional(
     (ror_shifts_t + (int_8_16_24))
-)).setParseAction(cb_shift)
+)).set_parse_action(cb_shift)
 
 
 
@@ -285,15 +288,15 @@ def cb_deref_wb(tokens):
         return AstMem(AstOp('wback', *tokens[:-1]), 32)
     return AstMem(tokens[0], 32)
 
-# shift_off.setParseAction(deref_off)
+# shift_off.set_parse_action(deref_off)
 deref_nooff = Group(
-    LBRACK + gpregs.parser + RBRACK).setParseAction(deref2expr_nooff)
+    LBRACK + gpregs.parser + RBRACK).set_parse_action(deref2expr_nooff)
 deref_pre = Group(LBRACK + gpregs.parser + Optional(
-    COMMA + shift_off) + RBRACK).setParseAction(cb_deref_preinc)
+    COMMA + shift_off) + RBRACK).set_parse_action(cb_deref_preinc)
 deref_post = Group(LBRACK + gpregs.parser + RBRACK +
-                   COMMA + shift_off).setParseAction(cb_deref_post)
+                   COMMA + shift_off).set_parse_action(cb_deref_post)
 deref = Group((deref_post | deref_pre | deref_nooff)
-              + Optional('!')).setParseAction(cb_deref_wb)
+              + Optional('!')).set_parse_action(cb_deref_wb)
 
 
 def cb_gpreb_wb(tokens):
@@ -303,7 +306,7 @@ def cb_gpreb_wb(tokens):
         return AstOp('wback', *tokens[:-1])
     return tokens[0]
 
-gpregs_wb = Group(gpregs.parser + Optional('!')).setParseAction(cb_gpreb_wb)
+gpregs_wb = Group(gpregs.parser + Optional('!')).set_parse_action(cb_gpreb_wb)
 
 
 cond_list_full = ['EQ', 'NE', 'CS', 'CC', 'MI', 'PL', 'VS', 'VC',
@@ -343,7 +346,6 @@ class additional_info(object):
 
 class instruction_arm(instruction):
     __slots__ = []
-    delayslot = 0
 
     def __init__(self, *args, **kargs):
         super(instruction_arm, self).__init__(*args, **kargs)
@@ -412,15 +414,92 @@ class instruction_arm(instruction):
             )
 
         if isinstance(expr, ExprOp) and expr.op == 'postinc':
-            o = '[%s]' % r
+            o = '[' + str(r) + ']'
             if s and not (isinstance(s, ExprInt) and int(s) == 0):
                 o += ', %s' % s
         else:
             if s and not (isinstance(s, ExprInt) and int(s) == 0):
-                o = '[%s, %s]' % (r, s)
+                o = '[' + ("%s, %s" % (r, s)) + ']'
             else:
-                o = '[%s]' % (r)
+                o = '[' + str(r) + ']'
 
+        if wb:
+            o += "!"
+        return o
+
+    @staticmethod
+    def arg2html(expr, index=None, loc_db=None):
+        wb = False
+        if expr.is_id() or expr.is_int() or expr.is_loc():
+            return color_expr_html(expr, loc_db)
+        if isinstance(expr, ExprOp) and expr.op in expr2shift_dct:
+            if len(expr.args) == 1:
+                return '%s %s' % (color_expr_html(expr.args[0], loc_db), expr2shift_dct[expr.op])
+            elif len(expr.args) == 2:
+                return '%s %s %s' % (color_expr_html(expr.args[0], loc_db), expr2shift_dct[expr.op], expr.args[1])
+            else:
+                raise NotImplementedError('zarb arg2str')
+
+
+        sb = False
+        if isinstance(expr, ExprOp) and expr.op == "sbit":
+            sb = True
+            expr = expr.args[0]
+        if isinstance(expr, ExprOp) and expr.op == "reglist":
+            o = [gpregs.expr.index(x) for x in expr.args]
+            out = reglist2html(o)
+            if sb:
+                out += "^"
+            return out
+
+
+        if isinstance(expr, ExprOp) and expr.op == 'wback':
+            wb = True
+            expr = expr.args[0]
+        if isinstance(expr, ExprId):
+            out = color_expr_html(expr, loc_db)
+            if wb:
+                out += "!"
+            return out
+
+        if not isinstance(expr, ExprMem):
+            return color_expr_html(expr, loc_db)
+
+        expr = expr.ptr
+        if isinstance(expr, ExprOp) and expr.op == 'wback':
+            wb = True
+            expr = expr.args[0]
+
+
+        if isinstance(expr, ExprId):
+            r, s = expr, None
+        elif len(expr.args) == 1 and isinstance(expr.args[0], ExprId):
+            r, s = expr.args[0], None
+        elif isinstance(expr.args[0], ExprId):
+            r, s = expr.args[0], expr.args[1]
+        else:
+            r, s = expr.args[0].args
+        if isinstance(s, ExprOp) and s.op in expr2shift_dct:
+            s_html = ' '.join(
+                str(x)
+                for x in (
+                        color_expr_html(s.args[0], loc_db),
+                        utils.set_html_text_color(expr2shift_dct[s.op], utils.COLOR_OP),
+                        color_expr_html(s.args[1], loc_db)
+                )
+            )
+        else:
+            s_html = color_expr_html(s, loc_db)
+
+        if isinstance(expr, ExprOp) and expr.op == 'postinc':
+            o = BRACKET_O + color_expr_html(r, loc_db) + BRACKET_C
+            if s and not (isinstance(s, ExprInt) and int(s) == 0):
+                o += ', %s' % s_html
+        else:
+            if s and not (isinstance(s, ExprInt) and int(s) == 0):
+                o = BRACKET_O + color_expr_html(r, loc_db) + ", " + s_html + BRACKET_C
+            else:
+                o = BRACKET_O + color_expr_html(r, loc_db) + BRACKET_C
 
         if wb:
             o += "!"
@@ -496,7 +575,6 @@ class instruction_arm(instruction):
 
 class instruction_armt(instruction_arm):
     __slots__ = []
-    delayslot = 0
 
     def __init__(self, *args, **kargs):
         super(instruction_armt, self).__init__(*args, **kargs)
@@ -1069,8 +1147,12 @@ class arm_op2(arm_arg):
             shift_op = ExprInt(amount, 32)
         a = regs_expr[rm]
         if shift_op == ExprInt(0, 32):
+            #rrx
             if shift_type == 3:
                 self.expr = ExprOp(allshifts[4], a)
+            #asr, lsr
+            elif shift_type == 1 or shift_type == 2:
+                self.expr = ExprOp(allshifts[shift_type], a, ExprInt(32, 32))
             else:
                 self.expr = a
         else:
@@ -1257,6 +1339,23 @@ def reglist2str(rlist):
             out.append(regs_str[rlist[i]] + '-' + regs_str[rlist[j]])
             i = j + 1
     return "{" + ", ".join(out) + '}'
+
+def reglist2html(rlist):
+    out = []
+    i = 0
+    while i < len(rlist):
+        j = i + 1
+        while j < len(rlist) and rlist[j] < 13 and rlist[j] == rlist[j - 1] + 1:
+            j += 1
+        j -= 1
+        if j < i + 2:
+            out.append(color_expr_html(regs_expr[rlist[i]], None))
+            i += 1
+        else:
+            out.append(color_expr_html(regs_expr[rlist[i]], None) + '-' + color_expr_html(regs_expr[rlist[j]], None))
+            i = j + 1
+    out = utils.fix_html_chars("{") + ", ".join(out) + utils.fix_html_chars("}")
+    return out
 
 
 class arm_rlist(arm_arg):
@@ -1906,16 +2005,16 @@ gpregs_sppc = reg_info(regs_str[-1:] + regs_str[13:14],
                        regs_expr[-1:] + regs_expr[13:14])
 
 deref_reg_imm = Group(LBRACK + gpregs.parser + Optional(
-    COMMA + shift_off) + RBRACK).setParseAction(cb_deref_pre_mem)
+    COMMA + shift_off) + RBRACK).set_parse_action(cb_deref_pre_mem)
 deref_low = Group(LBRACK + gpregs_l.parser + Optional(
-    COMMA + shift_off) + RBRACK).setParseAction(cb_deref_pre_mem)
+    COMMA + shift_off) + RBRACK).set_parse_action(cb_deref_pre_mem)
 deref_pc = Group(LBRACK + gpregs_pc.parser + Optional(
-    COMMA + shift_off) + RBRACK).setParseAction(cb_deref_pre_mem)
+    COMMA + shift_off) + RBRACK).set_parse_action(cb_deref_pre_mem)
 deref_sp = Group(LBRACK + gpregs_sp.parser + COMMA +
-                 shift_off + RBRACK).setParseAction(cb_deref_pre_mem)
+                 shift_off + RBRACK).set_parse_action(cb_deref_pre_mem)
 
 gpregs_l_wb = Group(
-    gpregs_l.parser + Optional('!')).setParseAction(cb_gpreb_wb)
+    gpregs_l.parser + Optional('!')).set_parse_action(cb_gpreb_wb)
 
 
 gpregs_l_13 = reg_info(regs_str[:13], regs_expr[:13])
@@ -2338,7 +2437,25 @@ class arm_sp(arm_reg):
     reg_info = gpregs_sp
     parser = reg_info.parser
 
+class armt_shift_imm5(arm_imm):
+    # LSRS/ASRS #32 is encoded with a zero shift field
+    def decodeval(self, v):
+        if v == 0 and self.parent.name in ['LSRS', 'ASRS']:
+            return 32
+        return v
+
+    def encodeval(self, v):
+        if self.parent.name in ['LSRS', 'ASRS']:
+            if not 0 < v <= 32:
+                return False
+            return v & 0x1f
+        if not 0 <= v < 32:
+            return False
+        return v
+
+
 off5 = bs(l=5, cls=(arm_imm,), fname="off")
+off5_shift = bs(l=5, cls=(armt_shift_imm5,), fname="off")
 off3 = bs(l=3, cls=(arm_imm,), fname="off")
 off8 = bs(l=8, cls=(arm_imm,), fname="off")
 off7 = bs(l=7, cls=(arm_off7,), fname="off")
@@ -2440,7 +2557,7 @@ br_name = {'BEQ': 0, 'BNE': 1, 'BCS': 2, 'BCC': 3, 'BMI': 4,
 bs_br_name = bs_name(l=4, name=br_name)
 
 
-armtop("mshift", [bs('000'), bs_mshift_name, off5, rsl, rdl], [rdl, rsl, off5])
+armtop("mshift", [bs('000'), bs_mshift_name, off5_shift, rsl, rdl], [rdl, rsl, off5_shift])
 armtop("addsubr", [bs('000110'),  bs_addsub_name, rnl, rsl, rdl], [rdl, rsl, rnl])
 armtop("addsubi", [bs('000111'),  bs_addsub_name, off3, rsl, rdl], [rdl, rsl, off3])
 armtop("mcas", [bs('001'), bs_mov_cmp_add_sub_name, rnl, off8])
@@ -2486,7 +2603,11 @@ armtop("uxtah", [bs('111110100'), bs('001'), rn_nopc, bs('1111'), rd, bs('10'), 
 #
 # ARM Architecture Reference Manual Thumb-2 Supplement
 
-armt_gpreg_shift_off = (gpregs_nosppc.parser + allshifts_t_armt + (gpregs.parser | int_1_31)).setParseAction(cb_shift)
+armt_gpreg_shift_off = (gpregs_nosppc.parser + (
+    (all_binaryop_1_31_shifts_t + (gpregs.parser | int_1_31)) |
+    (all_binaryop_1_32_shifts_t + (gpregs.parser | int_1_32)) |
+    (all_unaryop_shifts_t + (gpregs.parser | int_1_31))
+)).set_parse_action(cb_shift)
 
 
 armt_gpreg_shift_off |= gpregs_nosppc.parser
@@ -2523,6 +2644,9 @@ class armt_gpreg_rm_shift_off(arm_reg):
             shift = allshifts_armt[self.parent.stype.value]
         else:
             shift = allshifts_armt[4]
+        # LSR/ASR #32 is encoded with a zero shift field
+        if i == 0 and shift in ['>>', 'a>>']:
+            i = 32
         self.expr = ExprOp(shift, r, ExprInt(i, 32))
         return True
 
@@ -2550,6 +2674,12 @@ class armt_gpreg_rm_shift_off(arm_reg):
             self.parent.imm5_2.value = 0
             self.parent.stype.value = 3
             return True
+        if shift in ['>>', 'a>>']:
+            if not 0 < i <= 32:
+                return False
+            i &= 0x1f
+        elif not 0 <= i < 32:
+            return False
         self.parent.stype.value = allshifts_armt.index(shift)
         self.parent.imm5_2.value = i & 3
         self.parent.imm5_3.value = i >> 2
@@ -3241,8 +3371,8 @@ bs_deref_reg_reg = bs(l=4, cls=(armt_deref_reg_reg,))
 bs_deref_reg_reg_lsl_1 = bs(l=4, cls=(armt_deref_reg_reg_lsl_1,))
 
 
-armtop("adc", [bs('11110'),  imm12_1, bs('0'), bs('1010'), scc, rn_nosppc, bs('0'), imm12_3, rd_nosppc, imm12_8])
-armtop("adc", [bs('11101'),  bs('01'), bs('1010'), scc, rn_nosppc, bs('0'), imm5_3, rd_nosppc, imm5_2, imm_stype, rm_sh])
+armtop("adc", [bs('11110'),  imm12_1, bs('0'), bs('1010'), scc, rn_nosppc, bs('0'), imm12_3, rd_nosppc, imm12_8], [rd_nosppc, rn_nosppc, imm12_8])
+armtop("adc", [bs('11101'),  bs('01'), bs('1010'), scc, rn_nosppc, bs('0'), imm5_3, rd_nosppc, imm5_2, imm_stype, rm_sh], [rd_nosppc, rn_nosppc, rm_sh])
 armtop("bl", [bs('11110'), tsign, timm10H, bs('11'), tj1, bs('1'), tj2, timm11L])
 armtop("blx", [bs('11110'), tsign, timm10H, bs('11'), tj1, bs('0'), tj2, timm10L, bs('0')])
 armtop("cbz", [bs('101100'), imm1, bs('1'), imm5_off, rnl], [rnl, imm5_off])
@@ -3282,7 +3412,7 @@ armtop("mov", [bs('11101010010'), scc, bs('1111'), bs('0'), imm5_3, rd_nosppc, i
 armtop("mov", [bs('11101010010'), scc, bs('1111'), bs('0'), imm5_3, rd_nosppc, imm5_2, imm_stype_11, rm_sh], [rd_nosppc, rm_sh] )
 
 
-armtop("orr", [bs('11110'), imm12_1, bs('00010'), scc, rn_nosppc, bs('0'), imm12_3, rd, imm12_8] )
+armtop("orr", [bs('11110'), imm12_1, bs('00010'), scc, rn_nosppc, bs('0'), imm12_3, rd, imm12_8], [rd, rn_nosppc, imm12_8])
 armtop("add", [bs('11110'), imm12_1, bs('01000'), bs('0'), rn, bs('0'), imm12_3, rd_nopc, imm12_8], [rd_nopc, rn, imm12_8])
 armtop("adds",[bs('11110'), imm12_1, bs('01000'), bs('1'), rn, bs('0'), imm12_3, rd_nopc, imm12_8], [rd_nopc, rn, imm12_8])
 armtop("bic", [bs('11110'), imm12_1, bs('00001'), scc, rn_nosppc, bs('0'), imm12_3, rd, imm12_8], [rd, rn_nosppc, imm12_8])

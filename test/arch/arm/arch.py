@@ -241,7 +241,12 @@ reg_tests_arm = [
      '110f111e'),
     ('XXXXXXXX    MCRCC      p15, 0x0, R8, c2, c0, 0x1',
      '308f023e'),
-
+    ('XXXXXXXX    MOV        R4, R4 ASR 0x20',
+     '4440a0e1'),
+    ('XXXXXXXX    MOV        R2, R5 LSR 0x20',
+     '2520a0e1'),
+    ('XXXXXXXX    MOVS       R2, R5 LSR 0x20',
+     '2520b0e1'),
 
 ]
 ts = time.time()
@@ -261,6 +266,7 @@ for s, l in reg_tests_arm:
     print([x for x in a])
     print(repr(b))
     assert(b in a)
+    print(l.to_html())
 
 reg_tests_armt = [
     ("0006ff5c    LSLS       R2, R0, 0x1A",
@@ -269,6 +275,10 @@ reg_tests_armt = [
      "db09"),
     ("0006af9c    ASRS       R0, R2, 0x1",
      "5010"),
+    ("xxxxxxxx    LSRS       R1, R0, 0x20",
+     "0108"),
+    ("xxxxxxxx    ASRS       R0, R1, 0x20",
+     "0810"),
     ("0006b1ea    ADDS       R1, R4, R5",
      "6119"),
     ("0006b304    ADDS       R2, R0, 0x1",
@@ -711,6 +721,16 @@ reg_tests_armt = [
 
     ("xxxxxxxx    CMP        R5, R0 LSR 0x8",
      "B5EB102F"),
+    ("xxxxxxxx    AND        R0, R1, R2 LSR 0x20",
+     "01EA1200"),
+    ("xxxxxxxx    CMP        R1, R2 ASR 0x20",
+     "B1EB220F"),
+    ("xxxxxxxx    ADC        R0, R1, 0x1",
+     "41F10100"),
+    ("xxxxxxxx    ADCS       R0, R1, R2",
+     "51EB0200"),
+    ("xxxxxxxx    ORR        R0, R1, 0xFF000000",
+     "41F07F40"),
 
 
 ]
@@ -733,6 +753,7 @@ for s, l in reg_tests_armt:
     print([x for x in a])
     print(repr(b))
     assert(b in a)
+    print(l.to_html())
 
 print('TEST time', time.time() - ts)
 

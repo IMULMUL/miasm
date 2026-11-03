@@ -179,7 +179,7 @@ system_regs = {
 
     (3, 0, 2, 3, 0): APGAKeyLo_EL1,
     (3, 0, 2, 3, 1): APGAKeyHi_EL1,
-    
+
     (3, 0, 4, 1, 0): SP_EL0,
     (3, 0, 4, 6, 0): ICC_PMR_EL1, # Alias ICV_PMR_EL1
 
@@ -282,10 +282,10 @@ system_regs = {
     (3, 1, 0, 0, 7): AIDR_EL1,
 
     (3, 2, 0, 0, 0): CSSELR_EL1,
-    (3, 0, 0, 0, 1): CTR_EL0,
+    (3, 3, 0, 0, 1): CTR_EL0,
 
     (3, 3, 0, 0, 7): DCZID_EL0,
-    
+
     (3, 3, 4, 4, 0): FPCR,
     (3, 3, 4, 4, 1): FPSR,
 
@@ -1578,13 +1578,13 @@ def msr(ir, instr, arg1, arg2, arg3, arg4, arg5, arg6):
         e.append(ExprAssign(zf, arg6[30:31]))
         e.append(ExprAssign(cf, arg6[29:30]))
         e.append(ExprAssign(of, arg6[28:29]))
-    
+
     elif arg1.is_int(3) and arg2.is_int(3) and arg3.is_id("c4") and arg4.is_id("c2") and arg5.is_int(7):
         e.append(ExprAssign(tco, arg6[25:26]))
 
     elif arg1.is_int(3) and arg2.is_int(3) and arg3.is_id("c4") and arg4.is_id("c2") and arg5.is_int(0):
         e.append(ExprAssign(dit, arg6[24:25]))
-    
+
     elif arg1.is_int(3) and arg2.is_int(0) and arg3.is_id("c4") and arg4.is_id("c2") and arg5.is_int(4):
         e.append(ExprAssign(uao, arg6[23:24]))
 
@@ -1599,7 +1599,7 @@ def msr(ir, instr, arg1, arg2, arg3, arg4, arg5, arg6):
         e.append(ExprAssign(af, arg6[8:9]))
         e.append(ExprAssign(iff, arg6[7:8]))
         e.append(ExprAssign(ff, arg6[6:7]))
-    
+
     elif arg1.is_int(3) and arg2.is_int(0) and arg3.is_id("c4") and arg4.is_id("c2") and arg5.is_int(2):
         e.append(ExprAssign(cur_el, arg6[2:4]))
 
@@ -1897,6 +1897,17 @@ def rev16(ir, instr, arg1, arg2):
     for i in range(0, arg2.size // 8):
         index = (i & ~1) + (1 - (i & 1))
         out.append(arg2[index * 8:(index + 1) * 8])
+    e = []
+    result = ExprCompose(*out)
+    e.append(ExprAssign(arg1, result))
+    return e, []
+
+def rbit(ir, instr, arg1, arg2):
+    out = []
+    for i in range(0, arg2.size):
+        out.append(arg2[i:i+1])
+
+    out.reverse()
     e = []
     result = ExprCompose(*out)
     e.append(ExprAssign(arg1, result))
@@ -2237,6 +2248,8 @@ mnemo_func.update({
     'extr': extr,
     'rev': rev,
     'rev16': rev16,
+
+    'rbit': rbit,
 
     'msr': msr,
     'mrs': mrs,

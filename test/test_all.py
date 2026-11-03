@@ -1,20 +1,23 @@
 #! /usr/bin/env python2
 
 from __future__ import print_function
-from builtins import map
-from builtins import range
+
 import argparse
-from distutils.spawn import find_executable
 import os
 import platform
-import time
+import subprocess
+import sys
 import tempfile
-import platform
+import time
+import unittest
+from builtins import map
+from builtins import range
 
+from parameterized import parameterized
+
+from utils import cosmetics, multithread
 from utils.test import Test
 from utils.testset import TestSet
-from utils import cosmetics, multithread
-from multiprocessing import Queue
 
 is_win = platform.system() == "Windows"
 is_64bit = platform.architecture()[0] == "64bit"
@@ -115,6 +118,9 @@ for script in ["x86/sem.py",
         tags = [TAGS[jitter]] if jitter in TAGS else []
         if (not is_64bit) and script.endswith("mn_div.py"):
             continue
+        if script.endswith("mn_div.py"):
+            # XXX
+            tags.append(TAGS["linux"])
         testset += ArchUnitTest(script, jitter, base_dir="arch", tags=tags)
 
 testset += ArchUnitTest("x86/unit/access_xmm.py", "python", base_dir="arch", tags=[TAGS["python"]])
@@ -699,6 +705,7 @@ testset += ExampleExpression(["constant_propagation.py",
                               Example.get_sample("simple_test.bin"), "-s", "0"],
                              products=["%s.propag.dot" % Example.get_sample("simple_test.bin")])
 testset += ExampleExpression(["export_llvm.py", "-a", "x86_32", Example.get_sample("simple_test.bin"), "0"],
+                             tags=[TAGS["llvm"]],
                              products=["out.ll"])
 
 
@@ -736,6 +743,7 @@ class ExampleSymbolExec(Example):
 
 
 testset += ExampleSymbolExec(["single_instr.py"])
+testset += ExampleSymbolExec(["symbol_exec.py", "--steps", Example.get_sample("box_upx.exe")])
 for options, nb_sol, tag in [([], 8, []),
                              (["-i", "--rename-args"], 12, [TAGS["z3"]])]:
     testset += ExampleSymbolExec(["depgraph.py",
@@ -761,7 +769,7 @@ dse_crackme_out = Example.get_sample("dse_crackme")
 for strategy in ["code-cov", "branch-cov", "path-cov"]:
     testset += ExampleSymbolExec(["dse_crackme.py", dse_crackme_out,
                                   "--strategy", strategy],
-                                 tags=[TAGS["z3"]])
+                                 tags=[TAGS["z3"], TAGS["gcc"]])
     testset += ExampleSymbolExec(["dse_strategies.py",
                                   Example.get_sample("simple_test.bin"),
                                   strategy],
@@ -796,6 +804,17 @@ for jitter in ExampleJitter.jitter_engines:
                              products=[Example.get_sample("box_upx_exe_unupx.bin")],
                              tags=tags.get(jitter, []))
 
+    testset += ExampleJitter(["unpack_generic.py",
+                              Example.get_sample("box_upx.exe")] +
+                             ["--jitter", jitter, "-o"],
+                             products=[Example.get_sample("box_upx.exe.dump")],
+                             tags=tags.get(jitter, []))
+
+    testset += ExampleJitter(["memory_breakpoint.py",
+                              Example.get_sample("box_upx.exe")] +
+                             ["--jitter", jitter] +
+                             ["-o", "0x401130", "0x100", "--access", "rw"],
+                             tags=tags.get(jitter, []))
 
 for script, dep in [(["x86_32.py", Example.get_sample("x86_32_sc.bin")], []),
                     (["arm.py", Example.get_sample("md5_arm"), "--mimic-env"],
@@ -840,7 +859,57 @@ testset += ExampleJitter(["trace.py", Example.get_sample("md5_arm"), "-a",
 ## Toshiba MeP
 testset += RegressionTest(["launch.py"], base_dir="arch/mep/asm")
 testset += RegressionTest(["launch.py"], base_dir="arch/mep/ir")
-testset += RegressionTest(["launch.py"], base_dir="arch/mep/jit")
+testset += RegressionTest(["launch.py"], base_dir="arch/mep/jit", tags=[TAGS["gcc"]])
+
+
+# region Unittest compatibility
+
+class TestSequence(unittest.TestCase):
+    # Compatibility layer for Python's unittest module
+    # Instead of calling the '__main__' defined below, we parameterize a single test with all the tests selected in
+    # testset, and run them as we would have.
+
+    tests = testset.tests
+    tests_without_shellcodes = (t for t in tests if "shellcode.py" not in t.command_line[0])
+
+    @staticmethod
+    def run_process(t):
+        """
+        @type t: Test
+        """
+        print("Base dir:", t.base_dir)
+        print("Command: ", t.command_line)
+        print("Depends: ", [t.command_line for t in t.depends])
+        print("Tags:    ", t.tags)
+        print("Products:", t.products)
+        executable = t.executable if t.executable else sys.executable
+        print("Exec:    ", executable, "(explicit)" if t.executable else "(default)")
+
+        for t in t.depends:
+            assert "shellcode.py" in t.command_line[0], "At the moment, only dependencies on 'shellcode.py' are handled"
+
+        subprocess.check_call(
+            [executable] + t.command_line,
+            cwd=testset.base_dir + t.base_dir,
+        )
+
+        print("Done")
+
+    @classmethod
+    def setUpClass(cls):
+        for t in testset.tests:
+            if "shellcode.py" in t.command_line[0]:
+                print("\n*** Shellcode generation ***")
+                cls.run_process(t)
+
+    @parameterized.expand(("_".join(test.command_line), test) for test in tests_without_shellcodes)
+    def test(self, name, t):
+        print("***", name, "***")
+        TestSequence.run_process(t)
+
+
+# endregion
+
 
 if __name__ == "__main__":
     # Argument parsing

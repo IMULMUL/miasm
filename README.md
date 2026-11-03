@@ -1,8 +1,4 @@
-[![Build Status](https://travis-ci.org/cea-sec/miasm.svg)](https://travis-ci.org/cea-sec/miasm)
-[![Build status](https://ci.appveyor.com/api/projects/status/g845jr23nt18uf29/branch/master?svg=true)](https://ci.appveyor.com/project/cea-sec/miasm)
 [![Miasm tests](https://github.com/cea-sec/miasm/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/cea-sec/miasm/actions/workflows/tests.yml?branch=master)
-[![Code Climate](https://codeclimate.com/github/cea-sec/miasm/badges/gpa.svg)](https://codeclimate.com/github/cea-sec/miasm)
-[![Join the chat at https://gitter.im/cea-sec/miasm](https://badges.gitter.im/cea-sec/miasm.svg)](https://gitter.im/cea-sec/miasm?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 <p align="center">
 <img src="https://raw.githubusercontent.com/cea-sec/miasm/master/doc/logo_miasm.png">
@@ -14,7 +10,7 @@ What is Miasm?
 
 Miasm is a free and open source (GPLv2) reverse engineering framework.
 Miasm aims to analyze / modify / generate binary programs. Here is
-a non exhaustive list of features:
+a non-exhaustive list of features:
 
 * Opening / modifying / generating PE / ELF 32 / 64 LE / BE
 * Assembling / Disassembling X86 / ARM / MIPS / SH4 / MSP430
@@ -516,7 +512,7 @@ instance to emulate library functions effects.
 Documentation
 =============
 
-TODO
+Some documentation resources are available in the [doc](doc) folder.
 
 An auto-generated documentation is available:
 * [Doxygen](http://miasm.re/miasm_doxygen)
@@ -533,17 +529,37 @@ Software requirements
 
 Miasm uses:
 
-* python-pyparsing
-* python-dev
-* optionally python-pycparser (version >= 2.17)
+* Python >= 3.10
+* future
+* pyparsing >= 2.4.1
 
-To enable code JIT, one of the following module is mandatory:
+Native jitter components are built when the local build environment supports
+them. If native extension compilation fails, installation continues and the
+jitter-dependent features are unavailable. Set `MIASM_REQUIRE_JIT=1` when
+building release wheels or when native jitter support must be present.
+
+To enable non-Python JIT backends, one of the following is mandatory:
 * GCC
 * Clang
-* LLVM with Numba llvmlite, see below
+* LLVM with Numba llvmlite (`pip install miasm[llvm]`), see below
 
-'optional' Miasm can also use:
-* Z3, the [Theorem Prover](https://github.com/Z3Prover/z3)
+Optional Python features are grouped as extras:
+
+| Extra | Dependency | Enables | Code using it |
+| --- | --- | --- | --- |
+| `cparser` | `pycparser>=2.17` | C type parsing and C-like expression access helpers | `miasm/core/ctypesmngr.py`, `miasm/core/objc.py` |
+| `z3` | `z3-solver==4.16.0.0` | Z3 expression translation, solver-backed dependency graph, DSE constraints, and range tests | `miasm/ir/translators/z3_ir.py`, `miasm/analysis/depgraph.py`, `miasm/analysis/dse.py` |
+| `llvm` | `llvmlite==0.50.0` | LLVM JIT backend and LLVM IR export | `miasm/jitter/jitcore_llvm.py`, `miasm/jitter/llvmconvert.py`, `example/expression/export_llvm.py` |
+| `graph` | `graphviz` | Python Graphviz object export from Miasm graphs | `miasm/core/graph.py` (`DiGraph.graphviz`) |
+| `crypto` | `pycryptodome` | Windows API crypto/hash emulation | `miasm/os_dep/win_api_x86_32.py` |
+| `all` | runtime extras above | All optional runtime features | Convenience alias for users |
+
+Development/test dependencies are not published as package extras. They live in
+`[dependency-groups]` in `pyproject.toml`:
+
+| Group | Dependency | Enables | Code using it |
+| --- | --- | --- | --- |
+| `dev` | `parameterized~=0.8.1` | Test runner parameterization | `test/test_all.py` |
 
 Configuration
 -------------
@@ -558,13 +574,19 @@ To use the jitter, GCC or LLVM is recommended
 * Build and install Miasm:
 ```pycon
 $ cd miasm_directory
-$ python setup.py build
-$ sudo python setup.py install
+$ python -m pip install .
 ```
 
-If something goes wrong during one of the jitter modules compilation, Miasm will
-skip the error and disable the corresponding module (see the compilation
-output).
+Optional dependencies can be installed with extras, for example:
+```pycon
+$ python -m pip install '.[cparser,z3,llvm]'
+$ python -m pip install '.[all]'
+$ python -m pip install --group dev '.[all]'  # local development/test runs
+```
+
+If something goes wrong during native jitter compilation, Miasm will skip the
+failing extension and keep the rest of the package installable. Set
+`MIASM_REQUIRE_JIT=1` to make native extension failures abort the build.
 
 Windows & IDA
 -------------
@@ -574,16 +596,28 @@ A quick way to have them working is to add:
 * `pyparsing.py` to `C:\...\IDA\python\` or `pip install pyparsing`
 * `miasm/miasm` directory to `C:\...\IDA\python\`
 
-All features excepting JITter related ones will be available. For a more complete installation, please refer to above paragraphs.
+All features excepting jitter related ones will be available. For a more complete installation, please refer to above paragraphs.
 
 Testing
 =======
 
-Miasm comes with a set of regression tests. To run all of them:
+Miasm comes with a set of regression tests. Test-only dependencies are declared
+in the `dev` dependency group. `uv sync` installs this group by default; use
+`--extra all` when you also want all optional runtime backends for full test
+coverage. With pip, install the group explicitly.
 
 ```pycon
+uv sync --extra all
+# or: python -m pip install --group dev '.[all]'
 cd miasm_directory/test
+
+# Run tests using our own test runner
 python test_all.py
+
+# Run tests using standard frameworks (slower, require 'parameterized')
+python -m unittest test_all.py        # sequential, requires 'unittest'
+python -m pytest test_all.py          # sequential, requires 'pytest'
+python -m pytest -n auto test_all.py  # parallel, requires 'pytest' and 'pytest-xdist'
 ```
 
 Some options can be specified:
@@ -608,8 +642,6 @@ Blog posts / papers / conferences
 
 * [Deobfuscation: recovering an OLLVM-protected program](http://blog.quarkslab.com/deobfuscation-recovering-an-ollvm-protected-program.html)
 * [Taming a Wild Nanomite-protected MIPS Binary With Symbolic Execution: No Such Crackme](https://doar-e.github.io/blog/2014/10/11/taiming-a-wild-nanomite-protected-mips-binary-with-symbolic-execution-no-such-crackme/)
-* [Génération rapide de DGA avec Miasm](https://www.lexsi.com/securityhub/generation-rapide-de-dga-avec-miasm/): Quick computation of DGA (French article)
-* [Enabling Client-Side Crash-Resistance to Overcome Diversification and Information Hiding](https://www.internetsociety.org/sites/default/files/blogs-media/enabling-client-side-crash-resistance-overcome-diversification-information-hiding.pdf): Detect undirected call potential arguments
 * [Miasm: Framework de reverse engineering](https://www.sstic.org/2012/presentation/miasm_framework_de_reverse_engineering/) (French)
 * [Tutorial miasm](https://www.sstic.org/2014/presentation/Tutorial_miasm/) (French video)
 * [Graphes de dépendances : Petit Poucet style](https://www.sstic.org/2016/presentation/graphes_de_dpendances__petit_poucet_style/): DepGraph (French)
@@ -617,5 +649,5 @@ Blog posts / papers / conferences
 Books
 -----
 
-* [Practical Reverse Engineering: X86, X64, Arm, Windows Kernel, Reversing Tools, and Obfuscation](http://eu.wiley.com/WileyCDA/WileyTitle/productCd-1118787315,subjectCd-CSJ0.html): Introduction to Miasm (Chapter 5 "Obfuscation")
+* [Practical Reverse Engineering: X86, X64, Arm, Windows Kernel, Reversing Tools, and Obfuscation](https://www.wiley.com/en-us/shop/general-introductory-computer-science/practical-reverse-engineering-x86-x64-arm-windows-kernel-reversing-tools-and-obfuscation-p-9781118787311): Introduction to Miasm (Chapter 5 "Obfuscation")
 * [BlackHat Python - Appendix](https://github.com/oreilly-japan/black-hat-python-jp-support/tree/master/appendix-A): Japan security book's samples
